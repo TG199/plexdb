@@ -1,39 +1,30 @@
-use std::collections::HashMap;
+mod cli;
+mod engine;
+mod error;
+mod kaystore;
 
-struct SimpleDb {
-    pub data: HashMap<String, String>,
-}
+use cli::CliArgs;
+use kaystore::KayStore;
 
-impl SimpleDb {
-    fn init() {
-        let db = SimpleDB {
-            data: HashMap::new(),
+fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
+    let args = CliArgs::parse();
+    let mut store = KayStore::open(&args.data_dir)?;
+
+    match args.command {
+        cli::Command::Set { key, value } => {
+            store.set(key, value)?;
+        }
+
+        cli::Command::Get { key } => match store.get(key)? {
+            Some(val) => println!("{}", val),
+            None => println!("Key not found"),
+        },
+
+        cli::Command::Delete { key } => {
+            store.delete(key)?;
         }
     }
-
-    fn insert(db: SimpleDb, key: String, value: String) {
-        db.entry(key).or_insert(value)
-    }
-
-    fn get(db: SimpleDb, key: String) -> SimpleDb {
-        db.get(&key)
-    }
-
-    fn delete(db: SimpleDb, key: String) {
-        db.remove(&key);
-        println!("key '{}' has been deleted", key)
-    }
-
-    fn display(db: SimpleDb) {
-        for (k, v) in db.iter() {
-            println!("{} {}", k, v);
-    }
-
-}
-
-fn main() {
-
-    let db = SimpleDb.init();
-
-    db.insert(String::from("name"), String::from("kele")); 
+    ok(())
 }
