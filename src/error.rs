@@ -17,6 +17,3 @@ pub enum KvError {
     #[error("Unexpected error: {0}")]
     Unexpected(String),
 }
-
-
-

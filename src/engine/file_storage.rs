@@ -1,55 +1,158 @@
 use std::collections::HashMap;
-use crate error::KvError{KeyNotFound, IO}; 
-use crate storage_enigne::StorageEngine;
-use crate cli::Command;
+use crate::error::KvError;
+use crate::storage_enigne::StorageEngine;
+use crate::cli::Command;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::{BufReader, Seek, SeekFrom, Write, Read};
+use std::path::PathBuf;
+use serde::{Serialize, Deserialize};
 
-struct FileEngine {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FileEngine {
     index: HashMap<String, u64>,
     data_file: File,
     path: PathBuf,
 }
 
+
 impl StorageEngine for FileEngine {
 
     fn get(&self, key: &str) -> Result<Option<String>, KvError> {
-        if let Some(&offset) = self.index.get(key) {
-            self.data_file.seek(SeekFrom::Start(offset))?;
 
-            let mut reader = BufReader::new(&self.data_file);
-            let line = String::new();
-            reader.read_line(&mut line)?;
+        if key.is_empty() {
+            return Err(KvError::KeyIsEmpty);
+        }
 
-            let parts: Vec<&str> = line.trim_end().splitn(3, ' ').collect();
+        let Some(&offset) = self.index.get(key) else {
+            return Ok(None);
+        }
 
-            if parts.len() == 3 && parts[0] == "set" && parts[1] == key {
-                return Ok(Some(parts[2].to_string());
+        let mut reader = BufReader::new(&self.data_file);
+
+        reader.seek(SeekFrom::Start(offset))?;
+
+        let mut length_bytes = [0u8; 8];
+
+        reader.read_exact(&mut length_bytes)?;
+
+        let length = u64::from_le_bytes(length_bytes) as usize;
+
+        let mut command_bytes = vec![0u8; length];
+        reader.read_exact(&mut command_bytes)?;
+
+        let command: Command = bincode::deserialize(&command_bytes)?;
+
+        match command {
+            Command::Set(k, v) if k == key => Ok(Some(v)),
+            Command::Set(_, _) | Command::Delete(_) => {
+                eprintln!(
+                    "Index points to mismatched or deleted command at offset {} for key '{}'",
+                    offset, key
+                );
+                Ok(None)
             }
         }
-        return KeyNotFound
     }
 
     fn set(&mut self, key: &str, value: &str) -> Result <(), KvError> {
+        if key.is_empty() || value.is_empty() {
+            return Err(KvError::KeyIsEmpty)
+        }
+
+        let command = Command::Set(key.to_string(), value.to_string());
+        let serialized = bincode::serialize(&command)?;
+
+        let length = serialized.len() as u64;
+        let length_bytes = length.to_le_bytes();
+
         let offset = self.data_file.seek(SeekFrom::End(0))?;
 
-        let line = format!("set {} {}\n", key, value);
-        self.data_file.write_all(line.as_bytes())?;
-        self.data_file.flush();
+        self.data_file.write_all(&length_bytes)?;
+        self.data_file.write_all(&serialized)?;
+        self.data_file.flush()?;
 
-        self.index.insert(key, offset);
-        Ok(());
+        self.index.insert(key.to_string(), offset);
+
+        Ok(())
     }
 
-    fn delete(&mut, self, key: &str) -> Result<(), KvError> {
+    fn delete(&mut self, key: &str) -> Result<(), KvError> {
+        if key.is_empty() {
+            return Err(KvError::KeyIsEmpty)
+        }
 
         if self.index.contains_key(key) {
+            let command = Command::Delete(key.to_string());
+
+            let serialized = bincode::serialize(&command)?;
+            let length = serialized.len() as u64;
+            let length_bytes = length.to_le_bytes();
+
+            self.data_file.seek(SeekFrom::End(0))?;
+            self.data_file.write_all(&length_bytes)?;
+            self.data_file.write_all(&serialized)?;
+
+            self.data_file.flush()?;
             self.index.remove(key);
+
+            return Ok(())
         }
-        return KeyNotFound
+        Err(KvError::KeyNotFound)
     }
 
 }
 
+impl FileEngine {
 
-pub fn load() {}
+    pub fn new(path: PathBuf) -> Result<Self, KvError> {
+        let file = OpenOptions::new().read(true).write(true).create(true).open(&path)?;
 
-pub fn reload() {}
+        let mut engine = FileEngine {
+            index: HashMap::new(),
+            data_file: file,
+            path,
+        };
+        engine.load()?;
+
+        Ok(engine)
+    }
+
+    pub fn load(&mut self) -> Result<(), KvError> {
+        let mut offset = 0u64;
+        let mut reader = BufReader::new(&self.data_file);
+        reader.seek(SeekFrom::Start(0))?;
+
+        loop {
+            let mut length_bytes = [0u8; 8];
+
+            match reader.read_exact(&mut length_bytes) {
+                Ok(()) => {}
+                Err(e) if e.kind == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(KvError::IO(e)),
+            }
+
+            let length = u64::from_le_bytes(length_bytes) as usize;
+            let mut command_bytes = vec![0u8; length];
+            
+            reader.read_exact(&mut command_bytes).map_err(KvError::IO)?;
+
+            let command: Command = bincode::deserialize(&command_bytes)
+                .map_err(|_| KvError::CorruptData(offset))?;
+
+            match command {
+                Command::Set(k, _) => {
+                    self.index.insert(k, offset);
+                }
+
+                Command::Delete(k) => {
+                    self.index.remove(&k);
+                }
+            }
+
+            offset += 8 + length as u64;
+        }
+
+        Ok(())
+    }
+}
