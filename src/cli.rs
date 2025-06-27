@@ -20,10 +20,6 @@ pub enum Command {
         value: String,
     },
 
-    Get {
-        key: String
-    },
-
     Delete {
         key: String
     },
