@@ -1,5 +1,7 @@
 use std::result::Result;
 
+use crate::error::KvError;
+
 pub trait StorageEngine {
     /* Trait that defines the storage engine */
 
@@ -7,5 +9,5 @@ pub trait StorageEngine {
 
     fn set(&mut self, key: &str, value: &str) -> Result<(), KvError>;
 
-    fn delete(&mut self, key: &str) Result<(), KvError>;
+    fn delete(&mut self, key: &str) -> Result<(), KvError>;
 }

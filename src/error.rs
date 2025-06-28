@@ -1,9 +1,7 @@
-use std::{io, fmt};
-use thiserror::Error;
 use bincode;
+use std::{fmt, io};
 
-
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum KvError {
     /// The key was not found in the store
     KeyNotFound,
@@ -19,11 +17,10 @@ pub enum KvError {
 
     /// Corrupt ot invalid data was found at a specific file offset.
     CorruptData(u64),
-
 }
 
 impl fmt::Display for KvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             KvError::KeyIsEmpty => write!(f, "The key is empty"),
             KvError::KeyNotFound => write!(f, "Key not found"),
@@ -47,7 +44,7 @@ impl std::error::Error for KvError {
 }
 
 impl From<bincode::Error> for KvError {
-    fn from(err: bincode ::Error) -> KvError {
+    fn from(err: bincode::Error) -> KvError {
         KvError::Deserialize(err)
     }
 }
