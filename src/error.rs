@@ -48,3 +48,9 @@ impl From<bincode::Error> for KvError {
         KvError::Deserialize(err)
     }
 }
+
+impl From<std::io::Error> for KvError {
+    fn from(err: std::io::Error) -> KvError {
+        KvError::IO(err)
+    }
+}

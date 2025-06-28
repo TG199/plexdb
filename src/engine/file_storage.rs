@@ -30,7 +30,7 @@ impl StorageEngine for FileEngine {
 
         let mut reader = BufReader::new(&self.data_file);
 
-        reader.seek(SeekFrom::Start(offset));
+        reader.seek(SeekFrom::Start(offset))?;
 
         let mut length_bytes = [0u8; 8];
 
