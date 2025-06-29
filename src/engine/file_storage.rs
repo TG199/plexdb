@@ -1,14 +1,13 @@
 use crate::cli::Command;
 use crate::error::KvError;
 use crate::storage_engine::StorageEngine;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::fs::{File, OpenOptions, rename};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 pub struct FileEngine {
     index: HashMap<String, u64>,
 
@@ -34,12 +33,12 @@ impl StorageEngine for FileEngine {
 
         let mut length_bytes = [0u8; 8];
 
-        reader.read_exact(&mut length_bytes);
+        let _ = reader.read_exact(&mut length_bytes);
 
         let length = u64::from_le_bytes(length_bytes) as usize;
 
         let mut command_bytes = vec![0u8; length];
-        reader.read_exact(&mut command_bytes);
+        let _ = reader.read_exact(&mut command_bytes);
 
         let command: Command = bincode::deserialize(&command_bytes)?;
 
@@ -157,4 +156,59 @@ impl FileEngine {
 
         Ok(())
     }
+
+    pub fn compact(&mut self) -> Result<(), KvError> {
+
+        let compact_path = self.path.with_extension("compacting");
+        let mut compact_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .read(true)
+            .truncate(true)
+            .open(&compact_path)?;
+
+        let mut new_index = HashMap::new();
+
+
+        for (key, &offset) in &self.index {
+            let mut reader = BufReader::new(&self.data_file);
+            reader.seek(SeekFrom::Start(offset))?;
+
+            let mut length_bytes = [0u8, 8];
+            reader.read_exact(&mut length_bytes)?;
+            let length = u64::from_le_bytes(length_bytes) as usize;
+
+            let mut command_bytes = vec![0u8; length];
+            reader.read_exact(&mut command_bytes)?;
+
+
+            let command: Command = bincode::deserialize(&command_bytes)?;
+
+
+            let mut writer = BufWriter::new(&compact_file);
+            let new_offset = compact_file.seek(SeekFrom::End(0))?;
+            writer.write_all(&length_bytes)?;
+            writer.write_all(&command_bytes)?;
+            writer.flush()?;
+
+            new_index.insert(key.clone(), new_offset);
+        }
+
+        compact_file.flush()?;
+        drop(compact_file);
+
+        rename(&compact_path, &self.path)?;
+
+        self.data_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&self.path)?;
+
+        self.index = new_index;
+
+        Ok(())
+    }
+}
+
+
 }
