@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+
 #[derive(Parser)]
 #[command(name = "kaydb")]
 #[command(about = "A Rust based key-value store", long_about = None)]
@@ -15,7 +16,19 @@ pub struct CliArgs {
 
 #[derive(Subcommand, Deserialize, Serialize)]
 pub enum Command {
-    Set { key: String, value: String },
+    Set {
+        key: String,
+        value: String
+    },
 
-    Delete { key: String },
+    Get {
+        key: String,
+    },
+
+
+    Delete {
+        key: String
+    },
+
+    Compact,
 }
