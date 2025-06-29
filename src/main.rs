@@ -1,25 +1,39 @@
-use kivistore::KvError;
-use kivistore::engine::file_storage::FileEngine;
+use kaydb::KvError;
+use kaydb::engine::file_storage::FileEngine;
+use kaydb::cli::{CliArgs, Command};
+use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let args = CliArgs::parse();
-    let mut store = KayStore::open(&args.data_dir)?;
+    let args = cli::CliArgs::parse();
+    let path = args.data_dir..join("data/data.log");
+    let mut store = FileEngine::new(path)?;
 
     match args.command {
-        cli::Command::Set { key, value } => {
-            store.set(key, value)?;
+        Command::Set { key, value} => {
+            store.set(&key, &value)?;
+            println!("Set '{}' = '{}'", key, value);
         }
 
-        cli::Command::Get { key } => match store.get(key)? {
-            Some(val) => println!("{}", val),
-            None => println!("Key not found"),
-        },
+        Command::Get { key } => {
+            match store.get(&key)? {
+                Some(val) => println!("{}", val),
+                None => KvError::KeyNotFound(key),
+            }
+        }
 
-        cli::Command::Delete { key } => {
-            store.delete(key)?;
+        Command::Delete { key } => {
+            store.delete(&key)?;
+            println!("Deleted '{}'", key);
+        
+        }
+
+        Command::Compact => {
+            store.compact()?;
+            println!("Compaction complete.");
         }
     }
-    ok(())
+
+    Ok(())
 }
