@@ -188,11 +188,12 @@ impl FileEngine {
             let _ = reader.read_exact(&mut command_bytes)?;
 
 
-            let command: Command = bincode::deserialize(&command_bytes)?;
+            let _: Command = bincode::deserialize(&command_bytes)?;
 
 
-            let mut writer = BufWriter::new(&compact_file);
             let new_offset = compact_file.seek(SeekFrom::End(0))?;
+            let mut writer = BufWriter::new(&compact_file);
+            /*let new_offset = compact_file.seek(SeekFrom::End(0))?;*/
             writer.write_all(&length_bytes)?;
             writer.write_all(&command_bytes)?;
             writer.flush()?;
