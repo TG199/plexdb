@@ -51,8 +51,12 @@ impl StorageEngine for FileEngine {
                 );
                 Ok(None)
             }
+
+            Command::Get { key: _ } | Command::Compact => todo!(),
+
         }
     }
+
 
     fn set(&mut self, key: &str, value: &str) -> Result<(), KvError> {
         if key.is_empty() || value.is_empty() {
@@ -149,6 +153,8 @@ impl FileEngine {
                 Command::Delete { key: k} => {
                     self.index.remove(&k);
                 }
+
+                Command::Get { key: _} | Command::Compact => todo!(),
             }
 
             offset += 8 + length as u64;
@@ -174,12 +180,12 @@ impl FileEngine {
             let mut reader = BufReader::new(&self.data_file);
             reader.seek(SeekFrom::Start(offset))?;
 
-            let mut length_bytes = [0u8, 8];
-            reader.read_exact(&mut length_bytes)?;
+            let mut length_bytes = [0u8; 8];
+            let _ = reader.read_exact(&mut length_bytes)?;
             let length = u64::from_le_bytes(length_bytes) as usize;
 
             let mut command_bytes = vec![0u8; length];
-            reader.read_exact(&mut command_bytes)?;
+            let _ = reader.read_exact(&mut command_bytes)?;
 
 
             let command: Command = bincode::deserialize(&command_bytes)?;
@@ -208,7 +214,5 @@ impl FileEngine {
 
         Ok(())
     }
-}
-
 
 }

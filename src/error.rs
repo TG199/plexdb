@@ -23,7 +23,7 @@ impl fmt::Display for KvError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             KvError::KeyIsEmpty => write!(f, "The key is empty"),
-            KvError::KeyNotFound(key) => write!(f, "Key {} not found",  key),
+            KvError::KeyNotFound => write!(f, "Key not found"),
             KvError::IO(err) => write!(f, "I/O error: {}", err),
             KvError::Deserialize(err) => write!(f, "Deserialization error: {}", err),
             KvError::CorruptData(offset) => {
