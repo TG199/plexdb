@@ -9,7 +9,7 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let args = CliArgs::parse();
-    let path = args.data_dir.join("data/data.log");
+    let path = args.data_dir.join("./data.log");
     let mut store = FileEngine::new(path)?;
 
     match args.command {
