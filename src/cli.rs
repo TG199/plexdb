@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser)]
-#[command(name = "kaydb")]
+#[command(name = "plexdb")]
 #[command(about = "A Rust based key-value store", long_about = None)]
 
 pub struct CliArgs {

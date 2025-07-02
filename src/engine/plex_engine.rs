@@ -1,5 +1,5 @@
 use crate::cli::Command;
-use crate::error::KvError;
+use crate::error::PlexError;
 use crate::storage_engine::StorageEngine;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -8,7 +8,7 @@ use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 #[derive(Serialize, Debug)]
-pub struct FileEngine {
+pub struct PlexEngine {
     index: HashMap<String, u64>,
 
     #[serde(skip_serializing, skip_deserializing)]
@@ -17,10 +17,10 @@ pub struct FileEngine {
     path: PathBuf,
 }
 
-impl StorageEngine for FileEngine {
-    fn get(&self, key: &str) -> Result<Option<String>, KvError> {
+impl StorageEngine for PlexEngine {
+    fn get(&self, key: &str) -> Result<Option<String>, PlexError> {
         if key.is_empty() {
-            return Err(KvError::KeyIsEmpty);
+            return Err(PlexError::KeyIsEmpty);
         }
 
         let Some(&offset) = self.index.get(key) else {
@@ -58,9 +58,9 @@ impl StorageEngine for FileEngine {
     }
 
 
-    fn set(&mut self, key: &str, value: &str) -> Result<(), KvError> {
+    fn set(&mut self, key: &str, value: &str) -> Result<(), PlexError> {
         if key.is_empty() || value.is_empty() {
-            return Err(KvError::KeyIsEmpty);
+            return Err(PlexError::KeyIsEmpty);
         }
 
         let command = Command::Set { key: key.to_string(), value: value.to_string()};
@@ -80,9 +80,9 @@ impl StorageEngine for FileEngine {
         Ok(())
     }
 
-    fn delete(&mut self, key: &str) -> Result<(), KvError> {
+    fn delete(&mut self, key: &str) -> Result<(), PlexError> {
         if key.is_empty() {
-            return Err(KvError::KeyIsEmpty);
+            return Err(PlexError::KeyIsEmpty);
         }
 
         if self.index.contains_key(key) {
@@ -101,19 +101,19 @@ impl StorageEngine for FileEngine {
 
             return Ok(());
         }
-        Err(KvError::KeyNotFound)
+        Err(PlexError::KeyNotFound)
     }
 }
 
-impl FileEngine {
-    pub fn new(path: PathBuf) -> Result<Self, KvError> {
+impl PlexEngine {
+    pub fn new(path: PathBuf) -> Result<Self, PlexError> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(&path)?;
 
-        let mut engine = FileEngine {
+        let mut engine = PlexEngine {
             index: HashMap::new(),
             data_file: file,
             path,
@@ -123,7 +123,7 @@ impl FileEngine {
         Ok(engine)
     }
 
-    pub fn load(&mut self) -> Result<(), KvError> {
+    pub fn load(&mut self) -> Result<(), PlexError> {
         let mut offset = 0u64;
         let mut reader = BufReader::new(&self.data_file);
         reader.seek(SeekFrom::Start(0))?;
@@ -134,16 +134,16 @@ impl FileEngine {
             match reader.read_exact(&mut length_bytes) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(KvError::IO(e)),
+                Err(e) => return Err(PlexError::IO(e)),
             }
 
             let length = u64::from_le_bytes(length_bytes) as usize;
             let mut command_bytes = vec![0u8; length];
 
-            reader.read_exact(&mut command_bytes).map_err(KvError::IO)?;
+            reader.read_exact(&mut command_bytes).map_err(PlexError::IO)?;
 
             let command: Command =
-                bincode::deserialize(&command_bytes).map_err(|_| KvError::CorruptData(offset))?;
+                bincode::deserialize(&command_bytes).map_err(|_| PlexError::CorruptData(offset))?;
 
             match command {
                 Command::Set { key: k, value: _} => {
@@ -163,7 +163,7 @@ impl FileEngine {
         Ok(())
     }
 
-    pub fn compact(&mut self) -> Result<(), KvError> {
+    pub fn compact(&mut self) -> Result<(), PlexError> {
 
         let compact_path = self.path.with_extension("compacting");
         let mut compact_file = OpenOptions::new()
