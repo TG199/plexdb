@@ -39,6 +39,73 @@ impl Default for PartitionConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartitionMetadata {
+    pub id: u32,
+    pub generation: u64,
+    pu size: u64,
+    pub key_count: u64,
+    pub created_at: u64,
+    pub last_comapction: u64,
+    pub tombstone_count: u64,
+}
 
+#[derive(Debug)]
+pub struct Partition {
+    pub id: u32,
+    pub metadata: Arc<RwLock<PartitonMetadata>>,
+    pub file_manager: Arc<FileManager>,
+    pub bloom_filter: Arc<RwLock<BloomFilter>>,
+    pub index: Arc<RwLock<HasMap<String, FileOffset>>>,
+}
+
+pub struct FileOffset {
+    pub partition_id: u32,
+    pub file_id: u32,
+    pub offset: u64,
+    pub size: u32,
+    pub timestamp: u64,
+}
+
+pub trait Partitioner: Send + Sync {
+    fn partition_for_key(&self, key: &str) -> u32;
+    fn rebalance_needed(&self, partition: &[Partiton]) -> bool;
+}
+
+#[derive(Debug)]
+pub struct HashPartitioner {
+    partition_count: u32,
+}
+
+impl HashPartitoner {
+    pub fn new(partition_count: u32) -> Self {
+        Self { partition_count }
+    }
+}
+
+impl Partitioner for HashPartitioner {
+    fn partition_for_key(&self, key: &str) -> u32 {
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        (hasher.finish() % self.partition_count as u64) as u32
+    }
+
+
+    fn rebalance_needed(&self, partitions: &[Partition]) -> bool {
+        if partitions.is_empty() {
+            return false;
+        }
+
+        let size: Vec<u64> = partitions
+            .iter()
+            .map(|p| p.metadata.read().unwrap().size)
+            .collect();
+
+        let tota_size: u64 = sizes.iter().sum();
+        let avg_size = total_size / partitions.len() as u64;
+
+        sizes.iter().any(|&size| size > avg_size * 3)
+    }
+}
 
 
