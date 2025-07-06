@@ -21,7 +21,7 @@ pub struct PartitionConfig {
     pub bloom_filter_size: usize,
     pub bloom_filter_fp_rate: f64,
     pub enable_compression: bool,
-    pub compction_threshold: f64,
+    pub compaction_threshold: f64,
 
 }
 
@@ -34,7 +34,7 @@ impl Default for PartitionConfig {
             max_partition_size: DEFAULT_MAX_PARTITION_SIZE,
             bloom_filter_fp_rate: DEFAULT_BLOOM_FILTER_FP_RATE,
             enable_compression: false,
-            comapction_threshold: 0.7,
+            compaction_threshold: 0.7,
         }
     }
 }
@@ -46,7 +46,7 @@ pub struct PartitionMetadata {
     pu size: u64,
     pub key_count: u64,
     pub created_at: u64,
-    pub last_comapction: u64,
+    pub last_compaction: u64,
     pub tombstone_count: u64,
 }
 
