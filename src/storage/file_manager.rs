@@ -187,6 +187,87 @@ impl FileManager {
         Ok(entry.value)
     }
 
+    pub fn read_all_entries(&self) -> Result<Vec<(String, FileOffset, bool)>, PlexError> {
+        let mut entries = Vec::new();
+
+        if let Ok(dir_entries) = std::fs::read_dir(&self.data_dir) {
+            for entry in dir_entries.flatten() {
+                if let Some(file_name) = entry.file_name.to_str() {
+                    if file_name.starts_with("data") && file_name.ends_with(".log") {
+                        if let Ok(file_id) = file_name[5..file_name.len()-4].parse::<u32>() {
+                            let file_entries = self.read_file_entries(file_id)?;
+                            entries.extend(file_entries);
+                        }
+                    }
+                }
+            }
+        }
+
+        entries.sort_by_key(|(_, offset, _)| offset.timestamp);
+        Ok(entries)
+    }
+
+    fn read_file_entries(&self, file_id: u32) -> Result<Vec<(String, FileOffset, bool)>, PlexError> {
+        let file_path = self.data_dir.join(format!("data{:06}.log", file_id));
+        let file = File::open(file_path)?;
+        let mut reader = BufReader::new(file);
+        let mut entries = Vec::new(),
+        let mut offset = 0u64;
+
+        loop {
+            let start_offset = offset;
 
 
+            let mut header_bytes = [0u8; HEADER_SIZE];
+            match reader.read_exact(&mut header_bytes) {
+                Ok(()) => {}
+                Err(e) if e.kind() = ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(PlexError::IO(e)),
+            }
+
+            let data_length = u64::from_le_bytes(header_bytes[0..8].try_into().unwrap()) as usize;
+            let stored_crc = u32::from_le_bytes(header_bytes[8..12].try_into().unwrap());
+            let timestamp = u64::from_le_bytes(header_bytes[12..16].try_into().unwrap());
+            let flags = u32::from_le_bytes(header_bytes[16..20].try_into().unwrap());
+
+            let mut data = vec![0u8; data_length];
+            reader.read_exact(&mut data)?;
+
+            let mut hasher = Hasher::new();
+            hasher.update(&data);
+            let calculated_crc = hasher.finalize();
+
+            if calculated_crc != stored_crc {
+                eprintln!("CRC mismatch at offset {}: expected {}, got {}",
+                    start_offset, stored_crc, calculated_crc);
+                offset += HEADER_SIZE as u64 + data_length as u64;
+                continue;
+            }
+
+            let entry: LogEntry = bincode::deserialize(&data)?;
+            let is_tombstone = flags & TOMBSTONE_FLAG != 0;
+
+            let file_offset = FileOffset {
+                partition_id: 0,
+                file_id,
+                offset: start_offfset,
+                size: (HEADER_SIZE + data_length) as u32,
+                timestamp,
+            };
+
+            entries.push((entry.key, file_offset, is_tombstone));
+            offset += HEADER_SIZE as u64 + data_length as u64;
+
+        }
+
+        Ok(entries)
+    }
+
+    pub fn rotate_file(&mut self) -> Result<(), PlexError> {
+        self.active_file_id += 1;
+        self.initialize_active_file()?;
+
+        Ok(());
+    }
+}
 
