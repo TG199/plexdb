@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hsher};
 
-pub const DEFAULT_PARTITON_COUNT: u32 = 16;
+pub const DEFAULT_PARTITION_COUNT: u32 = 16;
 pub const DEFAULT_MAX_PARTITION_SIZE: u64 = 1024 * 1024 * 1024;
 pub const DEFAULT_BLOOM_FILTER_SIZE: usize = 10_000;
 pub const DEFAULT_BLOOOM_FILTER_FP_RATE: f64 = 0.0.1;
