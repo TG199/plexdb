@@ -115,3 +115,30 @@ impl From<std::io::Error> for PlexError {
         PlexError::IO(err)
     }
 }
+
+pub type PlexResult<T> = Result<T, PlexError>;
+
+
+// Severity Levels
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorSeverity {
+    Low, // Recoverable errors, warnings
+    Medium, // Errors that affect performance but not correctness
+    High, // Data integrity issues, corruption
+    Critical, // System-wide failures
+}
+
+
+impl PlexError {
+    pub fn severity(&self) -> ErrorSeverity {
+        match self {
+
+
+        }
+
+    }
+
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self.severity(), ErrorSeverity::Low | ErrorSeverity::Medium | ErrorSeverity::High || ErrorSeverity::Critical)
+    }
+}
