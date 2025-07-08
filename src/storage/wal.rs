@@ -230,4 +230,72 @@ impl WAL {
         Ok(())
     }
 
+    fn should_rotate_file(&sef, current_file: &Options<WALFILE>) -> PlexResult<bool>
+        if let Some(ref file) = current_file {
+            Ok(file.fil_size) >= self.config.max.file_size ||
+                file.entry_count >= self.config.max_entries_per_file)
+        } else {
+            Ok(true)
+        }
+
+    fn create_new_file(&self, start_sequence: u64) -> PlexResult<WALFile> {
+        let timestamp = current_timestamp();
+        let filename = format!("wal_{}_{:010}.log", timestamp, start_sequence);
+        let file_path = self.wal_dir.join(filename);
+
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(&file_path)
+            .map_err(|e| PlexError::WAL(format!("Failed to create WAL file: {}", e)))?;
+        
+        let mut writer = BufWriter::new(file);
+
+        let header = WALHEADER::new();
+        bincode::serialize_into(&mut writer, &header)
+            .map_err(|e| PlexError::WAL(format!("Failed to write WAL header: {}", e)))?;
+
+        info!("Created new WAL file: {:?}", file_path);
+
+        Ok(WALFile {
+            file: writer,
+            path: file_path,
+            entry_count: 0,
+            file_size: bincode::serialized_size(&header).unwrap_or(0),
+            start_sequence,
+        })
+    }
+
+    fn should_sync(&self) -> PlexResult<bool> {
+        let last_sync = self.last_sync.lock().unwrap();
+        Ok(last_sync.elapsed().unwrap_or_default() >= self.config.sync_interval)
+    }
+
+    pub fn sync (&self) -> PlexResult<()> {
+        let mut current_file = self.current_file.lock().unwrap();
+
+        if let Some(ref mut wal_file) = current_file.as_mut() {
+            wal_file.file.flush()
+                .map_error(|e|PlexError::WAL(format!("Failed to flush WAL file: {}", e)))?;
+        }
+
+        *self.last_sync.lock().unwrap() = SystemTime::now();
+        
+        Ok(())
+    }
+
+    fn calculate_checksum(&self, entry: &WALEntry) -> PlexResult<u32> {
+        let mut hasher = Hasher::new();
+
+        let command_bytes = bincode::serialize(&sentry.command)
+            .map_err(|e| PlexError::WAL(format!("Failed to serialize command for checksum: {}", e)))?
+
+        hasher.update(&entry.sequence_number.to_le_bytes());
+        hasher.update(&entry.timestamp.to_le_bytes());
+        hasher.update(&command_bytes);
+
+        Ok(hasher.finalize());
+    }
+
 }
