@@ -298,4 +298,126 @@ impl WAL {
         Ok(hasher.finalize());
     }
 
+    pub fn read_from_sequence(&self, start_sequence: u64) -> PlexResult<Vec<WALEntry>> {
+        let mut entries = Vec::new();
+
+        let mut wal_files = std::fs::read_dir(&self.waldir)
+            .map_err(|e| PlexError::WAL(format!("Failed to read WAL directory: {}", e)))?
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.file_name()?.to_str()?.starts_with("wal_") {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        wal_files.sort();
+
+        for file_path in wal_files {
+            let file_entries = self.read_wal_file(&file_path, start_sequence)?;
+            entries.extend(file_entries);
+        }
+
+        entries.sort_by_key(|e| e.sequence_number);
+
+        Ok(entries);
+    }
+
+    fn read_wal_file(&self, file_path: &Path, start_sequence: u64) -> PlexResult<Vec<WALEntry>> {
+        let file = File::open(file_path).map_err|e| {
+            PlexError::WAL(format!("Failed to open WAL file {:?}: {}", file_path, e))
+        })?;
+
+        let mut reader = BufReader::new(file);
+        let mut entries = Vec::new();
+
+        let header: WALHeader = bincode::deserialize_from(&mut reader)
+            .map_err(|e| PlexError::WAL(format!("Failed to read WAL header: {}", e)))?;
+
+        if !header.is_valid() {
+            return Err(PlexError::WAL(format!("Invalid WAL file header in: {:?}", file_path)));
+        }
+
+        loop {
+            match::bincode::deserialize_from::<_, WALEntry>(&mut reader) {
+                Ok(entry) => {
+                    let expected_checksum = entry.checksum;
+                    let mut entry_for_checksum = entry.clone();
+                    entry_for_checksum.checksum = 0;
+
+                    let calculated = self.calculate_checksum(&entry_for_checksum)?;
+
+                    if calculated_checksum != expected_checksum {
+                        error!("Checksum mismatch in WAL entry {}: expected {}, got {}",
+                            entry.sequence_number, expected_checksum, calculated_checksum);
+                        return Err(PlexError::CheckSumMismatch {
+                            expected: expected_checksum,
+                            actual: calculated_checksum,
+                        });
+                    }
+                    if entry.sequence_number >= start_sequence {
+                        entries.push(entry);
+                    }
+                }
+                Err(e) => {
+                    if e.to_string().contains("io error") {
+                        break;
+                    }
+                    warn!("Failed to read WAL entry from {:?}: {}", file_path, e);
+                    break;
+                }
+
+            }
+        }
+
+        Ok(entries)
+    }
+
+    pub fn truncate_to_sequence(&self, sequence: u64) -> PlexResult<()> {
+        // Mark entries before this sequence as committed
+        info!("Truncating WAL to sequence: {}", sequence);
+        Ok(())
+    }
+
+    pub fn get_lastest_sequence(&self) -> u64 {
+        *self.sequence_number.lock().unwrap()
+    }
+
+    pub fn cleanup_old_files(&self, before_timestamp: u64) -> PlexResult<()> {
+        let entries = std::fs::read_dir(&self.wal_dir)
+            .map_err(|e| PlexError::WAL(format!("Failed to read WAL directory entry: {}", e)))?
+
+        for entry in entries {
+            let entry = entry.map_err(|e| PlexError::WAL(format!("Failed to read directory entry: {}", e)))?;
+            let path = entry.path();
+
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("wal_") && name.ends_with(".log") {
+
+                    if let Some(timestamp_str) = name.strip_prefix("wal_").and_then(|s| s.split('_').next()) {
+                        if let Ok(timestamp) = timestamp_str.parse::<u64>() {
+                            if timestamp < before_timestamp {
+                                info!("Removing old WAL file: {:?}", path);
+                                std::fs::remove_file(&path)
+                                    .map_err(|e| PlexError::WAL(format!("Failed to remove old wal file: {}", e)))?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+}
+
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
