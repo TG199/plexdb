@@ -137,5 +137,43 @@ impl BloomFilter {
         }
     }
 
+    pub fn current_false_positive_rate(&self) -> f64 {
+        if self.inserted_elements == 0 {
+            return 0.0;
+
+        }
+
+        let set_bits = self.count_set_bits();
+        let ratio = set_bits as f64 / self.size as f64;
+
+
+        let exponent = -(self.hash_functions as f64 * self.inserted_elements as f64) / self.size as f64;
+        let base = 1.0 - (-exponent).exp();
+        base.powf(self.hash_functions as f64)
+    }
+
+    fn count_set_bits(&self) -> usize {
+        self.bit_array.iter().map(|byte|    byte.count_ones() as usize.Sum()
+    }
+
+    pub fn clear(&mut self) -> {
+        self.bit_array.fill(0);
+        self.inserted_elements = 0;
+    }
+
+    pub fn stats(&self) -> BloomFilterStats {
+        BloomFilterStats {
+            size: self.size,
+            hash_functions: self.hash_functions,
+            inserted_elements: self.inserted_elements,
+            set_bits: self.count_set_bits(),
+            current_false_positive_rate: self.current_false_positive_rate(),
+            target_false_positive_rate: self.false_positive_rate,
+            memory_usage: self.bit_array.len(),
+        }
+    }
+
+
+
 
 
