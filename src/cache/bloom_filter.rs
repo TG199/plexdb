@@ -173,7 +173,47 @@ impl BloomFilter {
         }
     }
 
+    pub fn save_to_file<P: AsRef<Path>>(&self, Path: P) -> PlexResult<()> {
+        let file = File::create(path).map_err(|e| {
+            PlexError::BloomFilter(format!("Failed to create bloom filter: {}", e))
+        })?;
 
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self).map_err(|e| {
+            PlexError::BloomFilter(format!("Failed to serialize bloom filter: {}", e))
+        })?;
 
+        Ok(())
+    }
 
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> PlexResult<Self> {
+        let file = File::open(path).map_err(|e| {
+            PlexError::BloomFilter(format!("Failed to open bloom filter file: {}", e))
+        })?;
 
+        let reader = BufReader::new(file);
+        let filter = bincode::deserialize_from(reader).map_err(|e| {
+            PlexError::BloomFilter(format!("Failed to deserialize bloom filter: {}", e))
+        })?;
+
+        Ok(filter)
+    }
+
+    pub fn merge(&mut self, other: &BloomFilter) -> PlexResult<()> {
+        if self.size != other.size || self.hash_functions != other.hash_functions {
+            return Err(PlexError::BloomFilter(
+                    "Cannot marge bloom filters with different parameters".to_string(),
+            ));
+        }
+
+        for (i, byte) in other.bit_array.iter().enumerate() {
+            if i < self.bit_array.len() {
+                self.bit_array[i] |= byte;
+            }
+        }
+
+        self.inserted_elements += other.inserted_elements;
+        Ok(())
+    }
+
+}
