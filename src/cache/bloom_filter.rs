@@ -216,4 +216,35 @@ impl BloomFilter {
         Ok(())
     }
 
+    pub fn should_resize(&self) -> bool {
+        self.current_false_positive_rate() > self.false_positive * 2.0
+    }
 }
+
+#[derive(Debig, Clone)]
+pub struct BloomFilterStats {
+    pub bit_count: u64,
+    pub hash_count: u32,
+    pub element_count: u64,
+    pub bits_set: u64,
+    pub fill_ratio: f64,
+    pub expected_fp_rate: f64,
+    pub current_fp_rate: f64,
+    pub memory_usage: usize,
+
+}
+
+impl BloomFilterStats {
+    pub fn is_healthy(&sel) -> bool {
+        self.current_fp_rate <= self.expected_fp_rate * 1.5
+    }
+}
+
+#[derive(Debug)]
+pub struct BloomFilterCollection {
+    filters: Vec<BloomFilter>,
+    default_capacity: u64,
+    default_fp_rate:f64,
+}
+
+
