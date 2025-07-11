@@ -286,4 +286,58 @@ impl BloomFilterCollection {
     pub fn stats(&self) -> Vec<BloomFilterStats> {
         self.filters.iter().map(|f| f.stats()).collect()
     }
+
+    pub fn rebuild_degraded_filters(&mut self) {
+        for filter in &mut self.filters {
+            if filter.should_rebuild() {
+                let new_filter = BloomFilter::new(self.default_capacity, self.default_fp_rate);
+                *filter = new_filter;
+            }
+        }
+    }
+
+    pub fn save_to_directory<P: AsRef<Path>>(&self, dir_path: P) -> Result<(), PlexError> {
+        let dir  = dir_path.as_ref();
+        std::fs::create_dir_all(dir)?;
+
+        for (i, filter) in self.filters.iter().enumerate() {
+            let file_path = dir.join(format!("bloom_filter_{:03}.bf", i));
+            filter.save_to_file(file_path)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn load_from_directory(P: AsRef<Path>>(dir_path: P) -> Result<Self, PlexError>{
+        let dir = dir_path.as_ref();
+        let mut filters = Vec::new();
+
+        let mut entries: Vec<_> = std::fs::read_dir(dir)?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry.path().extension()
+                    .map_or(false, |ext| ext == "bf")
+            })
+        .collect();
+
+        entries.sort_by_key(|entry| entry.path());
+
+        for entry in entries {
+            let filter = BloomFilter::load_from_file(entry.path())?;
+            filters.push(filter);
+        }
+
+        if filters.is_empty() {
+            return Err(PlexError::Config("No bloom filter files found".to_string());
+        }
+
+        let default_capacity = filters[0].item_count.max(1000);
+        let default_fp_rate = filters[0].false_positive_rate;
+
+        Ok(Self {
+            filters,
+            default_capacity,
+            default_fp_rate,
+        })
+    }
 }
