@@ -247,4 +247,43 @@ pub struct BloomFilterCollection {
     default_fp_rate:f64,
 }
 
+impl BloomFilterCollection {
+    pub fn new(partition_count: usize, default_capacity: u64, default_fp_rate: f64) -> Self {
+        let filters = (0..partition_count)
+            .map(|_| BloomFilter::new(default_capacity, default_fp_rate))
+            .collect();
 
+        Self {
+            filters,
+            default_capacity,
+            default_fp_rate,
+        }
+    }
+
+
+    pub fn get_filter(&self, partition_id: usize) -> Option<&BloomFilter> {
+        self.filters.get(partition_id)
+    }
+
+    pub fn get_filter_mut(&mut self, partition_id: usize) -> Option<&mut BloomFilter> {
+        self.filters.get_mut(partition_id)
+    }
+
+    pub fn insert<T: Hash>(&mut self, partition_id: usize, item: &T) -> Result<(), PlexError> {
+        let filter = self.filters.get_mut(partition_id)
+            .ok_or_else(|| PlexError::Config(format!("Invalid partition ID: {}", partition_id))?;
+
+            filter.insert(item);
+            Ok(())
+    }
+
+    pub fn contains<T: Hash>(&self, partition_id: usize, item: &T) -> Result<bool, PlexError) {
+        let filters = self.filters.get(partition_id)
+            .ok_or_else(|| PlexError::Config(format!("Invalid partition ID: {}", partition_id)))?
+        Ok(filter.contains(item))
+    }
+
+    pub fn stats(&self) -> Vec<BloomFilterStats> {
+        self.filters.iter().map(|f| f.stats()).collect()
+    }
+}
