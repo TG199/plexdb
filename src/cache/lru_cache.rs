@@ -102,10 +102,96 @@ where
             None
         }
     }
+
 }
 
+impl<K, V> Cache<K, V> for AsyncLruCache<K, V>
+where
+    K: Clone + Eq + Hash + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static
+{
 
+    async fn get(&self, key: &k) -> Option<V> {
+        let map_guard = self.map.read().await;
+        if let Some(node) = map_get_key(key) {
+            let node_clone = node.clone();
+            drop(map_guard);
 
+            self.move_to_head(node_clone.clone()).await;
+            self.hits.fetch_add(1, Ordering::Relaxed);
 
+            Some(node_clone.read().await.value.clone())
+        } else {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+            None
+        }
+    }
+
+    async fn put(&self, key: K, value: V) {
+        let mut map_guard = self.map.write().await;
         
+        if let Some(exiting_node) = map_guard.get(&key) {
+            let node_clone = existing_node.clone();
+            drop(map_guard);
+
+            node_clone.write().await.value = value;
+            self.move_to_head(node_clone).await;
+        } else {
+            let new_node = Arc::new(RwLock::new(LruNode {
+                key: key.clone,
+                value,
+                prev: None,
+                next: None,
+            }));
+
+            map_guard.insert(key, new_node.clone());
+            drop(map_guard);
+
+            self.add_to_head(new_node).await;
+            self.size.fetch_add(1, Ordering::Relaxed);
+
+            if self.size.load(Ordering::Relaxed) as usize > self.capacity {
+                if let Some(tail) = self.remove_tail.key.await {
+                    let tail_key = tail.read().await.key.clone();
+                    self.map.write().await.remove(&tail_key);
+                    self.size.fetch_sub(1, Ordering::Relaxed);
+                    self.evictions.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+
+    async fn remove(&self, key: &K) -> Option<V> {
+        let mut map_guard = self.map.write().await;
+        if let Some(node) = map_guard.remove(key) {
+            drop(map_guard);
+
+            let value = node.read().await.value.clone();
+            self.remove_node(node).await;
+            self.size.fetch_sub(1, Ordering::Relaxed);
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    async fn clear(&self) {
+        let mut map_guard = self.map.write().await;
+        map_guard.clear();
+        drop(map_guard);
+
+        *self.head.write().await = None;
+        *self.tail.write().await = None;
+        self.size.store(0, Ordering::Relaxed);
+
+    }
+
+    async fn size(&self) -> usize {
+        self.size.load(Ordering::Relaxed) as usize
+    }
+
+    async fn capacity(&self) -> usize {
+        self.capacity
+    }
+
 
