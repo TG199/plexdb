@@ -127,7 +127,7 @@ where
         }
     }
 
-    async fn put(&self, key: K, value: V) {
+    async fn set(&self, key: K, value: V) {
         let mut map_guard = self.map.write().await;
         
         if let Some(exiting_node) = map_guard.get(&key) {
