@@ -59,3 +59,79 @@ impl BlockCache {
 
 }
 
+pub struct CacheLayer<K, V> {
+    l1_cache: Arc<dyn Cache<K, V> + Send + Sync>,
+    l2_cache: Arc<dyn Cache<K, V> + Send + Sync>,
+    l3_cache: Option<Arc<BlockCache>>,
+}
+
+impl <K, V> CacheLayer<K, V>
+where
+    K: Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+
+    pub fn new(
+        l1_cache: Arc<dyn Cache<K, V> + Send + Sync>,
+        l2_cache: Arc<dyn Cache<K, V> + Send + Sync>,
+        l3_cache: Option<Arc<BlockCache>>,
+    ) -> Self {
+        Self {
+            l1_cache,
+            l2_cache,
+            l3_cache,
+        }
+    }
+
+    pub async fn get(&self, key: &K) -> Option<V> {
+
+        if let Some(value) = self.l1_cache.get(key).await {
+            return Some(value);
+        }
+
+        if let Some(value) = self.l2_cache.get(key).await {
+
+            self.l1_cache.set(key.clone(), value.clone()).await;
+            return Some(value);
+        }
+
+        None
+    }
+
+    pub async fn set(&self, key: K, value: V) {
+        self.l1_cache.set(key, value).await;
+    }
+
+    pub async fn remove(&self, key: &K) -> Option<V> {
+        let l1_result = self.l1_cache.remove(key).await;
+        let l2_result = self.l2_cache.remove(key).await;
+
+
+        l1_result.or(l2_result);
+    }
+
+    pub async fn clear(&self) -> {
+        self.l1_cache.clear().await;
+        self.l2_cache.clear().await;
+    }
+
+    pub async fn stats(&self) -> (CacheStats, CacheStats) {
+        let l1_stats = CacheStats {
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            size: self.l1_cache.size().await;
+            capacity: self.l1_cache.capacity().await;
+        };
+
+        let l2_stats = CacheStats {
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            size: self.l1_cache.size().await,
+            capacity: self.l1_cache.capacity().await;
+        };
+
+        (l1_stats, l2_stats)
+    }
+}
