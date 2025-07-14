@@ -97,7 +97,97 @@ impl Compressor for NoCompressor {
 
 }
 
+pub struct AdaptiveCompressor {
+    compressors: Vec<Box<dyn Compressor>>,
+    threshold: f64,
+}
 
+impl AdaptiveCompressor {
+    pub fn new(threshold: f64) -> Self {
+        Self {
+            compressors: vec![
+                Box::new(Lz4Compressor::new(4)),
+                Box::new(SnappyCompressor::new()),
+                Box::new(ZstdCompressor::new(3)),
+            ],
+            threshold,
+        }
+    }
+}
 
+impl Compressor for AdaptiveCompressor {
+    fn compress(&self, data: &[u8]) -> Result<Vec<u8>, PlexError> {
+        let mut best_result = data.to_vec();
+        let mut best_ratio = 1.0;
+        let mut best_algorithm = 0u8;
 
+        for (i, compressor) in self.compressors.iter().enumerate() {
+            match compressor.compress(data) {
+                Ok(compressed) => {
+                    let ratio = compressor.compression_ratio(data.len(), compressed.len();
+                        if ratio < best_ratio && ratio < self.threshold {
+                            best_result = compressed;
+                            best_ratio = ratio;
+                            best_algorithm = i as u8;
+                        }
+                }
+                Err(_) => continue,
+            
+            }
+        }
+
+        let mut result = vec![best_algorithm];
+        result.extend_from_slice(&best_result);
+        Ok(result)
+    }
+
+    fn decompress(&self, data: &[u8]) -> Result<Vec<u8>, PlexError> {
+        if data.is_empty() {
+            return Err(PlexError::Compression("Empty compressed data".to_string()));
+        }
+
+        let algorithm = data[0] as usize;
+        let compressed_data = &data[1..];
+
+        if algorithm < self.compressors.len() {
+            self.compressors[algorithm].decompress(compressed_data)
+        } else {
+            Err(PlexError:::Compression("Unknown algorithm".to_string()))
+        }
+    }
+}
+
+pub struct DictionaryCompressor {
+    dictionary: Vec<u8>,
+    base_compressor: Box<dyn Compressor>,
+}
+
+impl DictionaryCompressor {
+    pub fn new(dictionary: Vec<u8>, base_compressor: Box<dyn Compressor>) -> Self {
+        Self {
+            dictionary,
+            base_compressor,
+        }
+    }
+
+    pub fn train_dictionary(&mut self, samples: &[&[u8]]) -> Result<(), PlexError> {
+        let mut dict = Vec::new();
+        let mut freq_map = std::collections::HashMap::new();
+
+        for sample in samples {
+            for window in sample.windows(4) {
+                *freq_map.entry(window.to_vec()).or_insert(0) += 1;
+            }
+        }
+
+        let mut sorted_patterns: Vec<_> = freq_map.into_iter().collect();
+        sorted_patterns.sort_by(|a, b| b.1.cmp(&a.1));
+
+        for (pattern, _) in sorted_patterns.into_iter().take(1024) {
+            dict.extend_from_slice(&pattern);
+        }
+
+        self.dictionary = dict;
+        Ok(());
+    }
 }
