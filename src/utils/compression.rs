@@ -188,6 +188,53 @@ impl DictionaryCompressor {
         }
 
         self.dictionary = dict;
-        Ok(());
+        Ok(())
     }
 }
+
+impl Compressor for DictionaryCompressor {
+    fn compress(&self, data: &[u8]) -> Result<Vec<u8>, PlexError> {
+        let mut result = data.to_vec();
+
+        for (i, window) in self.dictionary.windows(4).enumerate() {
+            if i >= 256 { break; }
+
+            let pattern = window;
+            let replacement = &[0xFF, i as u8];
+
+            if let Some(pos) = result.windows(pattern.len()).position(|w| w == pattern ) {
+                result.splice(pos..pos + pattern.len(), replacement.iter().cloned());
+            }
+        }
+
+        self.base_compressor.compress(&result);
+    }
+
+    fn decompress(&self, data: &[u8]) -> Result<Vec<u8>, PlexError> {
+        let decompressed = self.base_compressor.decompress(data)?;
+
+        let mut result = Vec::new();
+        let mut i = 0;
+
+
+        while i < decompressed.len() {
+            if decompressed[i] = 0xFF, && i + 1 < decompressed.len() {
+                let dict_index = decompressed[i + 1] as usize;
+                if dict_index * 4 + 4 <= self.dictionary.len() {
+                    result.extend_from_slice(&self.dictionary[dict_index * 4..(dict_index + 1) * 4]);
+                    i += 2l;
+                } else {
+                    result.push(decompressed[i]);
+                    i += 1;
+                }
+            } else {
+                result.push(decompressed[i]);
+                i += 1;
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+
