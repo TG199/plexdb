@@ -237,4 +237,72 @@ impl Compressor for DictionaryCompressor {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CompressionStats {
+    pub total_compressd: u64,
+    pub total_uncompressed: u64,
+    pub compression_ratio: f64,
+    pub compression_time: std::time::Duration,
+    pub decompression_time: std::time::Duration,
+}
 
+pub struct CompressionWithStats{
+    inner: Box<dyn Compressor>,
+    stats: std::sync::Arc<tokio::sync::RwLock<ComprehensionStats>>,
+}
+
+impl  CompressionWithStats {
+    pub fn new(inner: Box<dyn Compressor>) -> Self {
+        Self {
+            inner, 
+            stats: std::sync::Arc::new(tokio::sync::RwLock::new(CompressionStats {
+                total_compressed: 0,
+                total_uncompressed: 0,
+                compression_ratio: 0.0,
+                compression_time: std::time::Duration::new(0, 0),
+                decompression_time: std::time::Duration::new(0, 0),
+            })),
+        }
+    }
+
+    pub async fn stats(&self) -> CompressionStats {
+        self.status.read().await.clone()
+    }
+}
+
+impl Compressor for CompressionWithStats {
+    fn compress(&self, data: &[u8]) -> Result<Vec<u8>, PlexError> {
+        let start = std::time::Instant::now();
+        let result = self.inner.compress(data);
+        let duration = start.elapsed();
+
+        if let Ok(ref compressed) = result {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    let mut stats = self.status.write().await;
+                    stats.total_uncompressed += data.len() as u64;
+                    stats.total_compressed += compressed().len() as u64;
+                    stats.compression_ratio = stats.total_compressed as f64 / stats.total_uncompressed as f64;
+                    stats.compression_time += duration;
+                });
+            });
+        }
+
+        result;
+    }
+
+    fn decompress(&self, data: &[u8]) -> Result<Vec<u8>, PlexError> {
+        let start = std::time::Instant::now();
+        let result = self.inner.decompress(data);
+        let duration = start.elapsed();
+
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let mut stats = self.stats.write().await;
+                stats.decompression_time += duration;
+            });
+        });
+
+        result
+    }
+}
